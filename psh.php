@@ -1,47 +1,49 @@
 #!/usr/bin/php
 <?php
 
-function logg($msg) {
-	echo "<".getmypid()."> $msg\n";
+function receive($sockets, $from) {
+	$data = socket_read($sockets[$from], 2048, PHP_NORMAL_READ);
+	return unserialize(base64_decode($data));
 }
 
-$sockets = array();
-socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $sockets);
-socket_set_nonblock($sockets[1]);
+function send($data, $sockets, $to) {
+	socket_write($sockets[$to], base64_encode(serialize($data))."\n");
+}
 
-$i=0;
-//while (++$i) {
-$commands=array('$a=12;','echo $a;');
-foreach($commands as $line) {
-	//$line = readline(getmypid()." $i> ");
-	$i++;
-	logg("want's to execute $line");
-		
-	$pid = pcntl_fork();
-	if ($pid>0) logg("started $pid"); 
-	
-	if ($pid == -1) {
-		die('no fork');
-	} else if ($pid) {
-		usleep(1000);
-		while(!socket_read($sockets[1], 1)) {
-			sleep(1);
-			if (-1 != pcntl_waitpid($pid, &$status, WNOHANG)) {
-				goto next_cmd;
-			}
-		}
-		exit;
-next_cmd:
-	} else {
-		logg("executes $line");
-		eval($line);
-		logg("succeeded. send kill signal to parent.");
-		socket_write($sockets[0], 1, 1);
+function exec_srv($sockets) {
+	$rec = "";
+	while (1) {
+		$rec = receive($sockets, 1);
+		eval($rec);
 	}
 }
 
-logg("no more commands.");
+function spawn($function, array $params = array()) {
+	switch ($child = pcntl_fork()) {
+		case -1:
+			throw new Exception("Could not fork.");
+		case 0:
+			call_user_func_array($function, $params);
+			exit;			
+		default:
+	}
+}
 
+function shell($sockets) {
+	$i=0;
+	while (++$i) {
+		$line = readline("$i> ");
+		readline_add_history($line);
+		send($line, $sockets, 0);
+	}
+}
+
+$sockets = array();
+socket_create_pair(AF_UNIX, SOCK_STREAM, 0, &$sockets);
+spawn('exec_srv', array($sockets));
+shell($sockets);
+pcntl_wait(&$st);
 socket_close($sockets[0]);
 socket_close($sockets[1]);
+
 
