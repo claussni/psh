@@ -26,6 +26,15 @@ function spawn($function, array $params = array()) {
 			call_user_func_array($function, $params);
 			exit;			
 		default:
+			while(1) {
+				pcntl_waitpid($child, &$status);
+				switch ($status) {
+					case 0:
+						exit;
+					default:
+						throw new Exception("Child crashed");
+				}
+			}
 	}
 }
 
@@ -38,12 +47,10 @@ function shell($sockets) {
 	}
 }
 
-$sockets = array();
-socket_create_pair(AF_UNIX, SOCK_STREAM, 0, &$sockets);
-spawn('exec_srv', array($sockets));
-shell($sockets);
-pcntl_wait(&$st);
-socket_close($sockets[0]);
-socket_close($sockets[1]);
-
-
+/*
+try {
+	spawn('pop');
+} catch (Exception $t) {
+	echo $t->getMessage()."\n";
+}
+*/
