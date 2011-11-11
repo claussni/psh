@@ -10,14 +10,6 @@ function send($data, $sockets, $to) {
 	socket_write($sockets[$to], base64_encode(serialize($data))."\n");
 }
 
-function exec_srv($sockets) {
-	$rec = "";
-	while (1) {
-		$rec = receive($sockets, 1);
-		eval($rec);
-	}
-}
-
 function spawn($function, array $params = array()) {
 	switch ($child = pcntl_fork()) {
 		case -1:
@@ -26,31 +18,46 @@ function spawn($function, array $params = array()) {
 			call_user_func_array($function, $params);
 			exit;			
 		default:
-			while(1) {
-				pcntl_waitpid($child, &$status);
-				switch ($status) {
-					case 0:
-						exit;
-					default:
-						throw new Exception("Child crashed");
-				}
-			}
+			return $child;
 	}
 }
+
+function evaluate($statement, $sockets) {
+	eval($statement);
+	exec_srv($sockets);
+}
+
+function exec_srv($sockets) {
+	$status = 1;
+	while (1) {
+		$status=1;
+		$statement = receive($sockets, 1);
+		$pid = spawn('evaluate', array($statement, $sockets));
+		usleep(10000);
+		$exit_child = pcntl_waitpid($pid, &$status, WNOHANG);
+		send($status, $sockets, 1);
+		if (($status == 0) || ($exit_child==$pid)) exit;
+	}
+}
+
 
 function shell($sockets) {
+	spawn('exec_srv', array($sockets));
 	$i=0;
-	while (++$i) {
-		$line = readline("$i> ");
+	$status = 1;
+	while ($status != 0) {
+		$i++;
+		$line = readline(getmypid()." $i> ");
 		readline_add_history($line);
 		send($line, $sockets, 0);
+		$status = receive($sockets, 0);
+		pcntl_wait(&$s);
 	}
 }
 
-/*
-try {
-	spawn('pop');
-} catch (Exception $t) {
-	echo $t->getMessage()."\n";
-}
-*/
+$sockets = array();
+socket_create_pair(AF_UNIX, SOCK_STREAM, 0, &$sockets);
+shell($sockets);
+socket_close($sockets[0]);
+socket_close($sockets[1]);
+
