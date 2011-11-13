@@ -1,13 +1,41 @@
 #!/usr/bin/php
 <?php
 
+$signal=0;
+
 function receive($sockets, $from) {
 	$data = socket_read($sockets[$from], 2048, PHP_NORMAL_READ);
 	return unserialize(base64_decode($data));
 }
 
+function signal_handler($sig) {
+	global $signal;
+	$signal = 1;
+	pcntl_wait(&$status);
+  	if ($status > 0) {
+		$signal = 2;
+	}
+}
+
+function receive_status($sockets) {
+	global $signal;
+	$signal = 0;
+	pcntl_signal(SIGCHLD, 'signal_handler');
+	$rec=0;
+	while (!($signal || $rec)) {
+		usleep(1000);
+		$rec = socket_read($sockets[3], 1);
+		pcntl_signal_dispatch();
+	}
+	return $rec;
+}
+
 function send($data, $sockets, $to) {
 	socket_write($sockets[$to], base64_encode(serialize($data))."\n");
+}
+
+function send_status($sockets, $status) {
+	socket_write($sockets[2], $status);
 }
 
 function spawn($function, array $params = array()) {
@@ -24,19 +52,21 @@ function spawn($function, array $params = array()) {
 
 function evaluate($statement, $sockets) {
 	eval($statement);
+	send_status($sockets, 1);
 	exec_srv($sockets);
 }
 
+
 function exec_srv($sockets) {
-	$status = 1;
+	global $signal;
 	while (1) {
 		$status=1;
 		$statement = receive($sockets, 1);
 		$pid = spawn('evaluate', array($statement, $sockets));
-		usleep(10000);
-		$exit_child = pcntl_waitpid($pid, &$status, WNOHANG);
+		$status = receive_status($sockets);
+		if ($signal == 1) $status='exit';
 		send($status, $sockets, 1);
-		if (($status == 0) || ($exit_child==$pid)) exit;
+		if ($signal < 2) exit;
 	}
 }
 
@@ -44,20 +74,24 @@ function exec_srv($sockets) {
 function shell($sockets) {
 	spawn('exec_srv', array($sockets));
 	$i=0;
-	$status = 1;
-	while ($status != 0) {
+	while (1) {
 		$i++;
 		$line = readline(getmypid()." $i> ");
 		readline_add_history($line);
 		send($line, $sockets, 0);
-		$status = receive($sockets, 0);
-		pcntl_wait(&$s);
+		$rec = receive($sockets, 0);
+		pcntl_wait(&$st);
+	      	if ($rec === 'exit') break;
 	}
 }
 
-$sockets = array();
-socket_create_pair(AF_UNIX, SOCK_STREAM, 0, &$sockets);
+socket_create_pair(AF_UNIX, SOCK_STREAM, 0, &$pair1);
+socket_create_pair(AF_UNIX, SOCK_STREAM, 0, &$pair2);
+$sockets = array_merge($pair1, $pair2);
+socket_set_nonblock($sockets[3]);
 shell($sockets);
 socket_close($sockets[0]);
 socket_close($sockets[1]);
+socket_close($sockets[2]);
+socket_close($sockets[3]);
 
