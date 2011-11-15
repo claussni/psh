@@ -52,6 +52,8 @@ function spawn($function, array $params = array()) {
 
 function evaluate($statement, $sockets) {
 	eval($statement);
+	$err = error_get_last();
+	if ((NULL != $err) && ($err["line"]=1) && ($err["type"]<>E_DEPRECATED)) exit;
 	send_status($sockets, 1);
 	exec_srv($sockets);
 }
