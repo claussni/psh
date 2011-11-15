@@ -11,7 +11,8 @@ function receive($sockets, $from) {
 function signal_handler($sig) {
 	global $signal;
 	$signal = 1;
-	pcntl_wait(&$status);
+	$res = pcntl_wait(&$status);
+	echo "\tsignal handler wait: $res\n";
   	if ($status > 0) {
 		$signal = 2;
 	}
@@ -20,7 +21,6 @@ function signal_handler($sig) {
 function receive_status($sockets) {
 	global $signal;
 	$signal = 0;
-	pcntl_signal(SIGCHLD, 'signal_handler');
 	$rec=0;
 	while (!($signal || $rec)) {
 		usleep(1000);
@@ -66,7 +66,7 @@ function exec_srv($sockets) {
 		$status = receive_status($sockets);
 		if ($signal == 1) $status='exit';
 		send($status, $sockets, 1);
-		if ($signal < 2) exit;
+		if ($signal < 2) { exit; }
 	}
 }
 
@@ -80,11 +80,12 @@ function shell($sockets) {
 		readline_add_history($line);
 		send($line, $sockets, 0);
 		$rec = receive($sockets, 0);
-		pcntl_wait(&$st);
 	      	if ($rec === 'exit') break;
+		pcntl_signal_dispatch();
 	}
 }
 
+pcntl_signal(SIGCHLD, 'signal_handler');
 socket_create_pair(AF_UNIX, SOCK_STREAM, 0, &$pair1);
 socket_create_pair(AF_UNIX, SOCK_STREAM, 0, &$pair2);
 $sockets = array_merge($pair1, $pair2);
