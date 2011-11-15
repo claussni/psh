@@ -1,6 +1,8 @@
 #!/usr/bin/php
 <?php
 
+error_reporting(E_ALL);
+
 $signal=0;
 
 function receive($sockets, $from) {
@@ -12,7 +14,6 @@ function signal_handler($sig) {
 	global $signal;
 	$signal = 1;
 	$res = pcntl_wait(&$status);
-	echo "\tsignal handler wait: $res\n";
   	if ($status > 0) {
 		$signal = 2;
 	}
@@ -53,7 +54,17 @@ function spawn($function, array $params = array()) {
 function evaluate($statement, $sockets) {
 	eval($statement);
 	$err = error_get_last();
-	if ((NULL != $err) && ($err["line"]=1) && ($err["type"]<>E_DEPRECATED)) exit;
+	if ((NULL != $err) && ($err["line"]=1)) {
+		switch ($err["type"]) {
+			case E_ERROR:
+			case E_PARSE:
+			case E_CORE_ERROR:
+			case E_COMPILE_ERROR:
+			case E_USER_ERROR:
+				exit;
+			default:
+		}
+	}
 	send_status($sockets, 1);
 	exec_srv($sockets);
 }
@@ -88,8 +99,8 @@ function shell($sockets) {
 }
 
 pcntl_signal(SIGCHLD, 'signal_handler');
-socket_create_pair(AF_UNIX, SOCK_STREAM, 0, &$pair1);
-socket_create_pair(AF_UNIX, SOCK_STREAM, 0, &$pair2);
+socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair1);
+socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair2);
 $sockets = array_merge($pair1, $pair2);
 socket_set_nonblock($sockets[3]);
 shell($sockets);
