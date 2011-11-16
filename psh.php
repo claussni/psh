@@ -74,6 +74,7 @@ function shell() {
 	}
 	while (1) {
 		$line = readline("psh > ");
+		if ($line == "") continue;
 		readline_add_history($line);
 		socket_write($sockets[0], $line."\n");
 		$rec = socket_read($sockets[0], 1);
