@@ -4,11 +4,14 @@
 $silent_exit=FALSE;
 $sockets=array();
 
-error_reporting(E_ALL);
-
 define('CHILD_EXIT', 0);
 define('CHILD_OK', 1);
 define('CHILD_CRASH', 2);
+
+function set_silent_exit($flag) {
+	global $silent_exit;
+	$silent_exit = $flag;
+}
 
 function receive($from) {
 	global $sockets;
@@ -63,7 +66,6 @@ recursion:
 		send_status(CHILD_OK);
 	}
 
-	global $silent_exit;
 	while (1) {
 		$statement = receive(1);
 		switch (pcntl_fork()) {
@@ -76,7 +78,7 @@ recursion:
 		}
 		$status = receive_status();
 		send_status($status, 1);
-		$silent_exit = ($status == CHILD_OK);
+		set_silent_exit($status == CHILD_OK);
 		if ($status != CHILD_CRASH) exit;
 		pcntl_wait($_st);
 	}
@@ -84,7 +86,6 @@ recursion:
 
 
 function shell() {
-	global $sockets;
 	switch(pcntl_fork()) {
 		case -1:
 			die("Cannot fork");
@@ -92,10 +93,8 @@ function shell() {
 			exec_srv();
 			exit();
 	}
-	$i=0;
 	while (1) {
-		$i++;
-		$line = readline(getmypid()." $i> ");
+		$line = readline("psh > ");
 		readline_add_history($line);
 		send($line, 0);
 		$rec = receive_status(0);
@@ -103,8 +102,7 @@ function shell() {
 			break;
 		}
 	}
-	global $silent_exit;
-	$silent_exit=TRUE;
+	set_silent_exit(TRUE);
 }
 
 
