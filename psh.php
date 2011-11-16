@@ -59,11 +59,11 @@ function shutdown($sockets) {
 			case E_COMPILE_ERROR:
 			case E_USER_ERROR:
 				send_status($sockets, CHILD_CRASH);
+				return;
 		}
-	} else {
-		global $silent_exit;
-		if (!$silent_exit) send_status($sockets, CHILD_EXIT);
 	}
+	global $silent_exit;
+	if (!$silent_exit) send_status($sockets, CHILD_EXIT);
 }
 
 
@@ -98,10 +98,6 @@ function shell($sockets) {
 	$silent_exit=TRUE;
 }
 
-function counter($max) {
-	for($i=0;$i<$max;$i++) echo ".";
-	echo "\n";
-}
 
 socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair1);
 socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair2);
