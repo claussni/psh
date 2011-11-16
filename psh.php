@@ -30,7 +30,7 @@ function send_status($sockets, $status) {
 function spawn($function, array $params = array()) {
 	switch ($child = pcntl_fork()) {
 		case -1:
-			throw new Exception("Could not fork.");
+			return NULL;
 		case 0:
 			call_user_func_array($function, $params);
 			exit;			
@@ -71,8 +71,12 @@ function exec_srv($sockets) {
 	global $silent_exit;
 	while (1) {
 		$statement = receive($sockets, 1);
-		spawn('evaluate', array($statement, $sockets));
-		$status = receive_status($sockets);
+		if (spawn('evaluate', array($statement, $sockets))) {
+			$status = receive_status($sockets);
+		} else {
+			echo "Forking failed. Statement not executed.\n";
+			$status = CHILD_CRASH;
+		}
 		send($status, $sockets, 1);
 		$silent_exit = ($status == CHILD_OK);
 		if (($status == CHILD_OK) || ($status == CHILD_EXIT)) break;
