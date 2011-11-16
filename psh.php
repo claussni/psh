@@ -1,34 +1,22 @@
 #!/usr/bin/php
 <?php
 
+$silent_exit=FALSE;
+
 error_reporting(E_ALL);
 
-$signal=0;
+define('CHILD_EXIT', 0);
+define('CHILD_OK', 1);
+define('CHILD_CRASH', 2);
 
 function receive($sockets, $from) {
 	$data = socket_read($sockets[$from], 2048, PHP_NORMAL_READ);
 	return unserialize(base64_decode($data));
 }
 
-function signal_handler($sig) {
-	global $signal;
-	$signal = 1;
-	$res = pcntl_wait(&$status);
-  	if ($status > 0) {
-		$signal = 2;
-	}
-}
-
 function receive_status($sockets) {
-	global $signal;
-	$signal = 0;
-	$rec=0;
-	while (!($signal || $rec)) {
-		usleep(1000);
-		$rec = socket_read($sockets[3], 1);
-		pcntl_signal_dispatch();
-	}
-	return $rec;
+	$status = socket_read($sockets[3], 1);
+	return $status;
 }
 
 function send($data, $sockets, $to) {
@@ -54,32 +42,41 @@ function spawn($function, array $params = array()) {
 function evaluate($statement, $sockets) {
 	eval($statement);
 	$err = error_get_last();
-	if ((NULL != $err) && ($err["line"]=1)) {
+	if (($err) && ($err['type'] == E_PARSE)) {
+		die();
+	}
+	send_status($sockets, CHILD_OK);
+	exec_srv($sockets);
+}
+
+function shutdown($sockets) {
+	$err = error_get_last();
+	if ($err) {
 		switch ($err["type"]) {
 			case E_ERROR:
 			case E_PARSE:
 			case E_CORE_ERROR:
 			case E_COMPILE_ERROR:
 			case E_USER_ERROR:
-				exit;
-			default:
+				send_status($sockets, CHILD_CRASH);
 		}
+	} else {
+		global $silent_exit;
+		if (!$silent_exit) send_status($sockets, CHILD_EXIT);
 	}
-	send_status($sockets, 1);
-	exec_srv($sockets);
 }
 
 
 function exec_srv($sockets) {
-	global $signal;
+	global $silent_exit;
 	while (1) {
-		$status=1;
 		$statement = receive($sockets, 1);
-		$pid = spawn('evaluate', array($statement, $sockets));
+		spawn('evaluate', array($statement, $sockets));
 		$status = receive_status($sockets);
-		if ($signal == 1) $status='exit';
 		send($status, $sockets, 1);
-		if ($signal < 2) { exit; }
+		$silent_exit = ($status == CHILD_OK);
+		if (($status == CHILD_OK) || ($status == CHILD_EXIT)) break;
+		pcntl_wait($_st);
 	}
 }
 
@@ -93,16 +90,23 @@ function shell($sockets) {
 		readline_add_history($line);
 		send($line, $sockets, 0);
 		$rec = receive($sockets, 0);
-	      	if ($rec === 'exit') break;
-		pcntl_signal_dispatch();
+	      	if ($rec == CHILD_EXIT) {
+			break;
+		}
 	}
+	global $silent_exit;
+	$silent_exit=TRUE;
 }
 
-pcntl_signal(SIGCHLD, 'signal_handler');
+function counter($max) {
+	for($i=0;$i<$max;$i++) echo ".";
+	echo "\n";
+}
+
 socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair1);
 socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair2);
 $sockets = array_merge($pair1, $pair2);
-socket_set_nonblock($sockets[3]);
+register_shutdown_function('shutdown', $sockets);
 shell($sockets);
 socket_close($sockets[0]);
 socket_close($sockets[1]);
