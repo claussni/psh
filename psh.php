@@ -67,7 +67,7 @@ function exec_srv($statement=NULL) {
 	global $sockets;
 	global $silent_exit;
 	while (1) {
-		if (!$statement) {
+		if ($statement == NULL) {
 			$statement = receive(1);
 			if (spawn('exec_srv', array($statement))) {
 				$status = receive_status();
@@ -87,6 +87,7 @@ function exec_srv($statement=NULL) {
 				die();
 			}
 			send_status(CHILD_OK);
+			$statement=NULL;
 		}
 	}
 }
