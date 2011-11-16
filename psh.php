@@ -32,18 +32,6 @@ function send_status($status, $socket=2) {
 	socket_write($sockets[$socket], $status);
 }
 
-function spawn($function, array $params = array()) {
-	switch ($child = pcntl_fork()) {
-		case -1:
-			return NULL;
-		case 0:
-			call_user_func_array($function, $params);
-			exit;			
-		default:
-			return $child;
-	}
-}
-
 function shutdown() {
 	global $sockets;
 	$err = error_get_last();
@@ -55,7 +43,7 @@ function shutdown() {
 			case E_COMPILE_ERROR:
 			case E_USER_ERROR:
 				send_status(CHILD_CRASH);
-				return;
+				exit;
 		}
 	}
 	global $silent_exit;
@@ -64,12 +52,13 @@ function shutdown() {
 
 
 function exec_srv($statement=NULL) {
+recursion:
 	global $sockets;
 	if ($statement != NULL) {
 		eval($statement);
 		$err = error_get_last();
 		if (($err) && ($err['type'] == E_PARSE)) {
-			return;
+			exit;
 		}
 		send_status(CHILD_OK);
 	}
@@ -77,15 +66,18 @@ function exec_srv($statement=NULL) {
 	global $silent_exit;
 	while (1) {
 		$statement = receive(1);
-		if (spawn('exec_srv', array($statement))) {
-			$status = receive_status();
-		} else {
-			echo "Forking failed. Statement not executed.\n";
-			$status = CHILD_CRASH;
+		switch (pcntl_fork()) {
+			case -1:
+				echo "Forking failed. Statement not executed.\n";
+				$status = CHILD_CRASH;
+				exit;
+			case 0:
+				goto recursion;
 		}
+		$status = receive_status();
 		send_status($status, 1);
 		$silent_exit = ($status == CHILD_OK);
-		if ($status != CHILD_CRASH) return;
+		if ($status != CHILD_CRASH) exit;
 		pcntl_wait($_st);
 	}
 }
@@ -93,7 +85,13 @@ function exec_srv($statement=NULL) {
 
 function shell() {
 	global $sockets;
-	spawn('exec_srv');
+	switch(pcntl_fork()) {
+		case -1:
+			die("Cannot fork");
+		case 0:
+			exec_srv();
+			exit();
+	}
 	$i=0;
 	while (1) {
 		$i++;
