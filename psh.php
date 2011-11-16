@@ -65,30 +65,28 @@ function shutdown() {
 
 function exec_srv($statement=NULL) {
 	global $sockets;
+	if ($statement != NULL) {
+		eval($statement);
+		$err = error_get_last();
+		if (($err) && ($err['type'] == E_PARSE)) {
+			return;
+		}
+		send_status(CHILD_OK);
+	}
+
 	global $silent_exit;
 	while (1) {
-		if ($statement == NULL) {
-			$statement = receive(1);
-			if (spawn('exec_srv', array($statement))) {
-				$status = receive_status();
-			} else {
-				echo "Forking failed. Statement not executed.\n";
-				$status = CHILD_CRASH;
-			}
-			send_status($status, 1);
-			$silent_exit = ($status == CHILD_OK);
-			if (($status == CHILD_OK) || ($status == CHILD_EXIT)) break;
-			pcntl_wait($_st);
-			$statement=NULL;
+		$statement = receive(1);
+		if (spawn('exec_srv', array($statement))) {
+			$status = receive_status();
 		} else {
-			eval($statement);
-			$err = error_get_last();
-			if (($err) && ($err['type'] == E_PARSE)) {
-				die();
-			}
-			send_status(CHILD_OK);
-			$statement=NULL;
+			echo "Forking failed. Statement not executed.\n";
+			$status = CHILD_CRASH;
 		}
+		send_status($status, 1);
+		$silent_exit = ($status == CHILD_OK);
+		if ($status != CHILD_CRASH) return;
+		pcntl_wait($_st);
 	}
 }
 
