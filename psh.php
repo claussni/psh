@@ -13,61 +13,39 @@ function set_silent_exit($flag) {
 	$silent_exit = $flag;
 }
 
-function receive($from) {
-	global $sockets;
-	$data = socket_read($sockets[$from], 2048, PHP_NORMAL_READ);
-	return unserialize(base64_decode($data));
-}
-
-function receive_status($socket=3) {
-	global $sockets;
-	$status = socket_read($sockets[$socket], 1);
-	return $status;
-}
-
-function send($data, $to) {
-	global $sockets;
-	socket_write($sockets[$to], base64_encode(serialize($data))."\n");
-}
-
-function send_status($status, $socket=2) {
-	global $sockets;
-	socket_write($sockets[$socket], $status);
-}
-
 function shutdown() {
 	global $sockets;
 	$err = error_get_last();
 	if ($err) {
-		switch ($err["type"]) {
+		switch ($err['type']) {
 			case E_ERROR:
 			case E_PARSE:
 			case E_CORE_ERROR:
-			case E_COMPILE_ERROR:
 			case E_USER_ERROR:
-				send_status(CHILD_CRASH);
+			case E_COMPILE_ERROR:
+				socket_write($sockets[2], CHILD_CRASH);
 				exit;
 		}
 	}
 	global $silent_exit;
-	if (!$silent_exit) send_status(CHILD_EXIT);
+	if (!$silent_exit) socket_write($sockets[2], CHILD_EXIT);
 }
 
 
 function exec_srv($statement=NULL) {
-recursion:
 	global $sockets;
+recursion:
 	if ($statement != NULL) {
 		eval($statement);
 		$err = error_get_last();
 		if (($err) && ($err['type'] == E_PARSE)) {
 			exit;
 		}
-		send_status(CHILD_OK);
+		socket_write($sockets[2], CHILD_OK);
 	}
 
 	while (1) {
-		$statement = receive(1);
+		$statement = socket_read($sockets[1], 300, PHP_NORMAL_READ);
 		switch (pcntl_fork()) {
 			case -1:
 				echo "Forking failed. Statement not executed.\n";
@@ -76,8 +54,8 @@ recursion:
 			case 0:
 				goto recursion;
 		}
-		$status = receive_status();
-		send_status($status, 1);
+		$status = socket_read($sockets[3], 1);
+		socket_write($sockets[1], $status);
 		set_silent_exit($status == CHILD_OK);
 		if ($status != CHILD_CRASH) exit;
 		pcntl_wait($_st);
@@ -86,6 +64,7 @@ recursion:
 
 
 function shell() {
+	global $sockets;
 	switch(pcntl_fork()) {
 		case -1:
 			die("Cannot fork");
@@ -96,8 +75,8 @@ function shell() {
 	while (1) {
 		$line = readline("psh > ");
 		readline_add_history($line);
-		send($line, 0);
-		$rec = receive_status(0);
+		socket_write($sockets[0], $line."\n");
+		$rec = socket_read($sockets[0], 1);
 	      	if ($rec == CHILD_EXIT) {
 			break;
 		}
