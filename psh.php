@@ -2,6 +2,7 @@
 <?php
 
 $silent_exit=FALSE;
+$sockets=array();
 
 error_reporting(E_ALL);
 
@@ -9,21 +10,25 @@ define('CHILD_EXIT', 0);
 define('CHILD_OK', 1);
 define('CHILD_CRASH', 2);
 
-function receive($sockets, $from) {
+function receive($from) {
+	global $sockets;
 	$data = socket_read($sockets[$from], 2048, PHP_NORMAL_READ);
 	return unserialize(base64_decode($data));
 }
 
-function receive_status($sockets, $socket=3) {
+function receive_status($socket=3) {
+	global $sockets;
 	$status = socket_read($sockets[$socket], 1);
 	return $status;
 }
 
-function send($data, $sockets, $to) {
+function send($data, $to) {
+	global $sockets;
 	socket_write($sockets[$to], base64_encode(serialize($data))."\n");
 }
 
-function send_status($sockets, $status, $socket=2) {
+function send_status($status, $socket=2) {
+	global $sockets;
 	socket_write($sockets[$socket], $status);
 }
 
@@ -39,17 +44,19 @@ function spawn($function, array $params = array()) {
 	}
 }
 
-function evaluate($statement, $sockets) {
+function evaluate($statement) {
+	global $sockets;
 	eval($statement);
 	$err = error_get_last();
 	if (($err) && ($err['type'] == E_PARSE)) {
 		die();
 	}
-	send_status($sockets, CHILD_OK);
-	exec_srv($sockets);
+	send_status(CHILD_OK);
+	exec_srv();
 }
 
-function shutdown($sockets) {
+function shutdown() {
+	global $sockets;
 	$err = error_get_last();
 	if ($err) {
 		switch ($err["type"]) {
@@ -58,26 +65,27 @@ function shutdown($sockets) {
 			case E_CORE_ERROR:
 			case E_COMPILE_ERROR:
 			case E_USER_ERROR:
-				send_status($sockets, CHILD_CRASH);
+				send_status(CHILD_CRASH);
 				return;
 		}
 	}
 	global $silent_exit;
-	if (!$silent_exit) send_status($sockets, CHILD_EXIT);
+	if (!$silent_exit) send_status(CHILD_EXIT);
 }
 
 
-function exec_srv($sockets) {
+function exec_srv() {
+	global $sockets;
 	global $silent_exit;
 	while (1) {
-		$statement = receive($sockets, 1);
-		if (spawn('evaluate', array($statement, $sockets))) {
-			$status = receive_status($sockets);
+		$statement = receive(1);
+		if (spawn('evaluate', array($statement))) {
+			$status = receive_status();
 		} else {
 			echo "Forking failed. Statement not executed.\n";
 			$status = CHILD_CRASH;
 		}
-		send_status($sockets, $status, 1);
+		send_status($status, 1);
 		$silent_exit = ($status == CHILD_OK);
 		if (($status == CHILD_OK) || ($status == CHILD_EXIT)) break;
 		pcntl_wait($_st);
@@ -85,15 +93,16 @@ function exec_srv($sockets) {
 }
 
 
-function shell($sockets) {
-	spawn('exec_srv', array($sockets));
+function shell() {
+	global $sockets;
+	spawn('exec_srv');
 	$i=0;
 	while (1) {
 		$i++;
 		$line = readline(getmypid()." $i> ");
 		readline_add_history($line);
-		send($line, $sockets, 0);
-		$rec = receive_status($sockets, 0);
+		send($line, 0);
+		$rec = receive_status(0);
 	      	if ($rec == CHILD_EXIT) {
 			break;
 		}
@@ -106,8 +115,8 @@ function shell($sockets) {
 socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair1);
 socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair2);
 $sockets = array_merge($pair1, $pair2);
-register_shutdown_function('shutdown', $sockets);
-shell($sockets);
+register_shutdown_function('shutdown');
+shell();
 socket_close($sockets[0]);
 socket_close($sockets[1]);
 socket_close($sockets[2]);
