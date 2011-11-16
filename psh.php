@@ -14,8 +14,8 @@ function receive($sockets, $from) {
 	return unserialize(base64_decode($data));
 }
 
-function receive_status($sockets) {
-	$status = socket_read($sockets[3], 1);
+function receive_status($sockets, $socket=3) {
+	$status = socket_read($sockets[$socket], 1);
 	return $status;
 }
 
@@ -23,8 +23,8 @@ function send($data, $sockets, $to) {
 	socket_write($sockets[$to], base64_encode(serialize($data))."\n");
 }
 
-function send_status($sockets, $status) {
-	socket_write($sockets[2], $status);
+function send_status($sockets, $status, $socket=2) {
+	socket_write($sockets[$socket], $status);
 }
 
 function spawn($function, array $params = array()) {
@@ -77,7 +77,7 @@ function exec_srv($sockets) {
 			echo "Forking failed. Statement not executed.\n";
 			$status = CHILD_CRASH;
 		}
-		send($status, $sockets, 1);
+		send_status($sockets, $status, 1);
 		$silent_exit = ($status == CHILD_OK);
 		if (($status == CHILD_OK) || ($status == CHILD_EXIT)) break;
 		pcntl_wait($_st);
@@ -93,7 +93,7 @@ function shell($sockets) {
 		$line = readline(getmypid()." $i> ");
 		readline_add_history($line);
 		send($line, $sockets, 0);
-		$rec = receive($sockets, 0);
+		$rec = receive_status($sockets, 0);
 	      	if ($rec == CHILD_EXIT) {
 			break;
 		}
