@@ -44,17 +44,6 @@ function spawn($function, array $params = array()) {
 	}
 }
 
-function evaluate($statement) {
-	global $sockets;
-	eval($statement);
-	$err = error_get_last();
-	if (($err) && ($err['type'] == E_PARSE)) {
-		die();
-	}
-	send_status(CHILD_OK);
-	exec_srv();
-}
-
 function shutdown() {
 	global $sockets;
 	$err = error_get_last();
@@ -74,21 +63,31 @@ function shutdown() {
 }
 
 
-function exec_srv() {
+function exec_srv($statement=NULL) {
 	global $sockets;
 	global $silent_exit;
 	while (1) {
-		$statement = receive(1);
-		if (spawn('evaluate', array($statement))) {
-			$status = receive_status();
+		if (!$statement) {
+			$statement = receive(1);
+			if (spawn('exec_srv', array($statement))) {
+				$status = receive_status();
+			} else {
+				echo "Forking failed. Statement not executed.\n";
+				$status = CHILD_CRASH;
+			}
+			send_status($status, 1);
+			$silent_exit = ($status == CHILD_OK);
+			if (($status == CHILD_OK) || ($status == CHILD_EXIT)) break;
+			pcntl_wait($_st);
+			$statement=NULL;
 		} else {
-			echo "Forking failed. Statement not executed.\n";
-			$status = CHILD_CRASH;
+			eval($statement);
+			$err = error_get_last();
+			if (($err) && ($err['type'] == E_PARSE)) {
+				die();
+			}
+			send_status(CHILD_OK);
 		}
-		send_status($status, 1);
-		$silent_exit = ($status == CHILD_OK);
-		if (($status == CHILD_OK) || ($status == CHILD_EXIT)) break;
-		pcntl_wait($_st);
 	}
 }
 
