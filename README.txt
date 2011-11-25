@@ -2,7 +2,7 @@ Uncrashable PHP Shell
 =====================
 
 Offers a readline interactive shell for PHP that can handle Parser Errors as well as Fatal Errors.
-You can execute what ever type in without loosing the current variable scope.
+You can execute what every command you type in without loosing the current variable scope.
 
 Example session
 ---------------
